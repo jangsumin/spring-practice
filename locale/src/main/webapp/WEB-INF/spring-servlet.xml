@@ -11,6 +11,8 @@
 	http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 
 	<mvc:annotation-driven />
+	
+	<mvc:default-servlet-handler/>
 
 	<!-- Message Source -->
 	<bean id="messageSource"
