@@ -10,64 +10,152 @@ import java.util.List;
 import javax.sql.DataSource;
 
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.datasource.DataSourceUtils;
 
 public class JdbcContext {
 	private DataSource dataSource;
-	
+
 	public JdbcContext(DataSource dataSource) {
 		this.dataSource = dataSource;
 	}
-	
-	public <E> List<E> queryForList(String sql, RowMapper<E> rowMapper) {
-		return queryForListWithStatementStrategy(new StatementStrategy() {
+
+	public <E> List<E> query(String sql, RowMapper<E> rowMapper) {
+		return queryWithStatementStrategy(new StatementStrategy() {
 
 			@Override
 			public PreparedStatement makeStatement(Connection connection) throws SQLException {
-				return connection.prepareStatement(sql);				
+				return connection.prepareStatement(sql);
 			}
-			
+
 		}, rowMapper);
 	}
 
-	public int executeUpdate(String sql, Object[] parameters) {
-		return executeUpdateWithStatementStrategy(new StatementStrategy() {
+	public <E> E queryForObject(String sql, Object[] parameters, RowMapper<E> rowMapper) {
+		return queryForObjectWithStatementStrategy(new StatementStrategy() {
 
 			@Override
 			public PreparedStatement makeStatement(Connection connection) throws SQLException {
 				PreparedStatement pstmt = connection.prepareStatement(sql);
-				for (int i = 0; i < parameters.length; i++) {				
+				for (int i = 0; i < parameters.length; i++) {
 					pstmt.setObject(i + 1, parameters[i]);
 				}
 				return pstmt;
 			}
-			
+
+		}, rowMapper);
+	}
+
+	private <E> E queryForObjectWithStatementStrategy(StatementStrategy statementStrategy, RowMapper<E> rowMapper) {
+		Connection conn = null;
+		PreparedStatement pstmt = null;
+		ResultSet rs = null;
+		
+		try {
+			conn = DataSourceUtils.getConnection(dataSource);
+			pstmt = statementStrategy.makeStatement(conn);
+			rs = pstmt.executeQuery();
+			if (rs.next()) {
+				return rowMapper.mapRow(rs, rs.getRow());
+			}
+		} catch (SQLException e) {
+			throw new RuntimeException(e);
+		} finally {
+			try {
+				if (rs != null) {
+					rs.close();
+				}
+				
+				if (pstmt != null) {
+					pstmt.close();
+				}
+
+				if (conn != null) {
+					DataSourceUtils.releaseConnection(conn, dataSource);
+				}
+			} catch (SQLException ignore) {
+
+			}
+		}
+
+		return null;
+	}
+
+	public int update(String sql, Object... parameters) {
+		return updateWithStatementStrategy(new StatementStrategy() {
+
+			@Override
+			public PreparedStatement makeStatement(Connection connection) throws SQLException {
+				PreparedStatement pstmt = connection.prepareStatement(sql);
+				for (int i = 0; i < parameters.length; i++) {
+					pstmt.setObject(i + 1, parameters[i]);
+				}
+				return pstmt;
+			}
+
 		});
 	}
-	
-	private <E> List<E> queryForListWithStatementStrategy(StatementStrategy statementStrategy, RowMapper<E> rowMapper) throws RuntimeException {
+
+	private <E> List<E> queryWithStatementStrategy(StatementStrategy statementStrategy, RowMapper<E> rowMapper)
+			throws RuntimeException {
 		List<E> result = new ArrayList<>();
-		
-		try (Connection conn = dataSource.getConnection(); PreparedStatement pstmt = statementStrategy.makeStatement(conn); ResultSet rs = pstmt.executeQuery();) {
+		Connection conn = null;
+		PreparedStatement pstmt = null;
+		ResultSet rs = null;
+
+		try {
+			conn = DataSourceUtils.getConnection(dataSource);
+			pstmt = statementStrategy.makeStatement(conn);
+			rs = pstmt.executeQuery();
 			while (rs.next()) {
 				E e = rowMapper.mapRow(rs, rs.getRow());
 				result.add(e);
 			}
 		} catch (SQLException e) {
 			throw new RuntimeException(e);
+		} finally {
+			try {
+				if (rs != null) {
+					rs.close();
+				}
+				
+				if (pstmt != null) {
+					pstmt.close();
+				}
+
+				if (conn != null) {
+					DataSourceUtils.releaseConnection(conn, dataSource);
+				}
+			} catch (SQLException ignore) {
+
+			}
 		}
-		
+
 		return result;
 	}
 
-	private int executeUpdateWithStatementStrategy(StatementStrategy statementStrategy) throws RuntimeException {
-		int count = 0;
+	private int updateWithStatementStrategy(StatementStrategy statementStrategy) throws RuntimeException {
+		Connection conn = null;
+		PreparedStatement pstmt = null;
 
-		try (Connection conn = dataSource.getConnection(); PreparedStatement pstmt = statementStrategy.makeStatement(conn);) {
-			count = pstmt.executeUpdate();
+		try {
+			conn = DataSourceUtils.getConnection(dataSource);
+			pstmt = statementStrategy.makeStatement(conn);
+			return pstmt.executeUpdate();
 		} catch (SQLException e) {
 			throw new RuntimeException(e);
+		} finally {
+			try {
+				if (pstmt != null) {
+					pstmt.close();
+				}
+
+				if (conn != null) {
+					DataSourceUtils.releaseConnection(conn, dataSource);
+				}
+			} catch (SQLException ignore) {
+
+			}
+
 		}
-		
-		return count;
 	}
 }
